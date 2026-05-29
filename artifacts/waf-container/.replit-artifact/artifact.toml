@@ -1,0 +1,12 @@
+kind = "web"
+previewPath = "/waf"
+title = "WAF Dashboard"
+version = "1.0.0"
+
+[[services]]
+localPort = 8000
+name = "WAF Django Server"
+paths = ["/waf", "/admin", "/static"]
+
+[services.development]
+run = "python manage.py runserver 0.0.0.0:8000"

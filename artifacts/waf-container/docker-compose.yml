@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  waf:
+    build: .
+    container_name: forced-browsing-waf
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=waf_project.settings
+      - DEBUG=False
+      - BACKEND_URL=http://app:80
+      - WAF_CONFIG_PATH=/app/config/waf_config.yaml
+    volumes:
+      - ./logs:/app/logs
+      - ./db.sqlite3:/app/db.sqlite3
+      - ./config:/app/config
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/waf/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      - app
+
+  app:
+    image: nginx:alpine
+    container_name: protected-app
+    ports:
+      - "8080:80"
+    volumes:
+      - ./demo_app:/usr/share/nginx/html:ro
+    restart: unless-stopped
+
+networks:
+  default:
+    name: waf-network

@@ -1,19 +1,23 @@
-# [Project name]
+# WAF — Защита от форсированного веб-браузинга
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Django-контейнер для обнаружения и блокировки атаки «форсированного веб-браузинга» (УБИ.159). Аналог модуля Wallarm Forced Browsing Protection.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `cd artifacts/waf-container && python manage.py runserver 0.0.0.0:8000` — запустить WAF-сервер
+- `cd artifacts/waf-container && python manage.py seed_demo` — загрузить демо-данные
+- `cd artifacts/waf-container && python manage.py makemigrations waf && python manage.py migrate` — применить миграции
+- `pnpm --filter @workspace/api-server run dev` — запустить Node.js API-сервер (порт 5000)
+- `pnpm run typecheck` — полная проверка типов всех пакетов
+- `pnpm run build` — сборка всех пакетов
+- `pnpm --filter @workspace/api-spec run codegen` — перегенерировать API-хуки и Zod-схемы из OpenAPI spec
+- `pnpm --filter @workspace/db run push` — применить изменения DB-схемы (только dev)
+- Требуемые переменные окружения: `DATABASE_URL` — строка подключения к Postgres
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
+- **WAF: Django 4.2, Python 3.11, SQLite (хранение блокировок и событий)**
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
 - Validation: Zod (`zod/v4`), `drizzle-zod`
@@ -22,23 +26,48 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/waf-container/` — Django WAF-проект
+  - `waf/middleware.py` — основной middleware перехвата запросов
+  - `waf/protection.py` — движок обнаружения атак (ProtectionEngine)
+  - `waf/models.py` — модели: BlockedIP, SecurityEvent, RequestLog, TrustedIP
+  - `waf/views.py` — API-эндпоинты и view-функции дашборда
+  - `waf/templates/waf/dashboard.html` — HTML-дашборд с Chart.js
+  - `config/waf_config.yaml` — конфигурация пороговых значений
+  - `logs/security_events.json` — JSON-логи безопасности (ELK-совместимые)
+- `lib/api-spec/openapi.yaml` — единый источник API-контракта
+- `lib/api-client-react/` — сгенерированные React Query хуки
+- `lib/api-zod/` — сгенерированные Zod-схемы
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **Статичное хранение в SQLite**: для лабораторного проекта SQLite достаточно; production-вариант предполагает Redis для in-memory счётчиков
+- **Скользящее окно (sliding window)**: подсчёт уникальных URL и 404-ответов в памяти (threading.Lock + deque), персистентность через Django ORM
+- **Три режима работы**: `block` — блокировка + логирование, `monitoring` — только логирование, `disabled` — WAF отключён
+- **Demo-режим без backend**: если `backend_url` пуст, запросы обрабатываются самим Django без проксирования
+- **ELK-совместимые логи**: `waf/logger.py` пишет структурированный JSON в `logs/security_events.json`
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+WAF-контейнер перехватывает все входящие HTTP-запросы к защищаемому приложению и:
+1. Считает уникальные URL per-IP в скользящем временном окне
+2. Отслеживает долю ответов 404 и частоту запросов (RPS)
+3. При превышении порогов автоматически блокирует IP с кодом 403
+4. Логирует все события безопасности в JSON-формат (ELK-stack)
+5. Предоставляет HTML-дашборд с графиками, таблицами событий, управлением блокировками
+
+Dashboard доступен по `/waf/`, Django-admin по `/admin/` (логин: admin, пароль: admin123).
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Проект на Python/Django согласно ТЗ (УБИ.159 — форсированный веб-браузинг)
+- Дашборд должен наглядно отображать количество заблокированных запросов и активных блокировок
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Порт 8000 занят WAF Django Server — не запускать другие сервисы на этом порту
+- После изменения моделей обязательно `makemigrations && migrate`
+- Конфиг читается при старте `ProtectionEngine` — изменения в `waf_config.yaml` требуют перезапуска сервера
+- При `backend_url = ""` в конфиге WAF работает в demo-режиме без реального проксирования
 
 ## Pointers
 

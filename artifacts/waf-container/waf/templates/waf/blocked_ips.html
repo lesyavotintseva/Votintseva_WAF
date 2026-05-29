@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Заблокированные IP — WAF</title>
+<style>
+:root{--bg:#0b0f1a;--surface:#131929;--surface2:#1a2236;--border:#1e2d47;--text:#e2e8f0;--muted:#64748b;--accent:#3b82f6;--danger:#ef4444;--warning:#f59e0b;--success:#22c55e;--info:#06b6d4}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:100}
+.logo{font-size:1.1rem;font-weight:700}
+.nav a{color:var(--muted);text-decoration:none;padding:.4rem .75rem;border-radius:6px;font-size:.8rem}
+.nav a:hover,.nav a.active{background:var(--surface2);color:var(--text)}
+main{padding:1.5rem 2rem;max-width:1600px;margin:0 auto}
+h1{font-size:1.25rem;margin-bottom:1.5rem}
+table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:12px;overflow:hidden;border:1px solid var(--border)}
+th{padding:.7rem 1rem;text-align:left;font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);background:var(--surface2)}
+td{padding:.65rem 1rem;border-bottom:1px solid rgba(30,45,71,.5);font-size:.8rem}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(59,130,246,.04)}
+.badge{display:inline-flex;align-items:center;padding:.15rem .5rem;border-radius:4px;font-size:.7rem;font-weight:600}
+.badge-danger{background:rgba(239,68,68,.15);color:var(--danger)}
+.badge-warning{background:rgba(245,158,11,.15);color:var(--warning)}
+.badge-success{background:rgba(34,197,94,.15);color:var(--success)}
+.badge-info{background:rgba(6,182,212,.15);color:var(--info)}
+.badge-muted{background:rgba(100,116,139,.15);color:var(--muted)}
+.ip{font-family:monospace;color:var(--accent)}
+.btn{padding:.3rem .75rem;border-radius:6px;border:none;cursor:pointer;font-size:.75rem;font-weight:600}
+.btn-success{background:var(--success);color:#fff}
+.btn-success:hover{background:#16a34a}
+#result{padding:.75rem 1rem;border-radius:8px;font-size:.8rem;margin-bottom:1rem;display:none}
+.ok{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:var(--success)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🛡️ WAF Dashboard</div>
+  <nav class="nav" style="display:flex;gap:.25rem">
+    <a href="/waf/">Обзор</a>
+    <a href="/waf/events/">События</a>
+    <a href="/waf/blocked-ips/" class="active">Блокировки</a>
+    <a href="/admin/">Администрирование</a>
+  </nav>
+</header>
+<main>
+  <h1>🔒 Заблокированные IP-адреса</h1>
+  <div id="result"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>IP-адрес</th><th>Причина</th><th>Заблокирован</th><th>Истекает</th>
+        <th>Унік. URL</th><th>Запросов</th><th>404</th><th>Статус</th><th>Действия</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in blocks %}
+      <tr>
+        <td class="ip">{{ b.ip_address }}</td>
+        <td>
+          {% if b.reason == 'unique_url_limit' %}<span class="badge badge-danger">Лимит URL</span>
+          {% elif b.reason == 'error_rate_limit' %}<span class="badge badge-warning">Лимит 404</span>
+          {% elif b.reason == 'rps_limit' %}<span class="badge badge-info">Лимит RPS</span>
+          {% elif b.reason == 'manual' %}<span class="badge badge-muted">Вручную</span>
+          {% else %}<span class="badge badge-muted">{{ b.reason }}</span>
+          {% endif %}
+        </td>
+        <td style="color:var(--muted);font-size:.75rem">{{ b.blocked_at|date:"d.m.Y H:i:s" }}</td>
+        <td style="color:var(--muted);font-size:.75rem">{% if b.expires_at %}{{ b.expires_at|date:"d.m.Y H:i" }}{% else %}Постоянно{% endif %}</td>
+        <td style="font-weight:600">{{ b.unique_urls_count }}</td>
+        <td>{{ b.total_requests }}</td>
+        <td style="color:var(--danger)">{{ b.error_404_count }}</td>
+        <td>{% if b.is_active %}<span class="badge badge-danger">Активна</span>{% else %}<span class="badge badge-muted">Снята</span>{% endif %}</td>
+        <td>
+          {% if b.is_active %}
+          <button class="btn btn-success" onclick="unblock('{{ b.ip_address }}')">Разблокировать</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:3rem">Нет заблокированных IP</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+<script>
+async function unblock(ip) {
+  const r = await fetch('/waf/api/unblock-ip/', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ ip })
+  });
+  const d = await r.json();
+  const el = document.getElementById('result');
+  el.textContent = d.message || d.error;
+  el.className = 'ok';
+  el.style.display = 'block';
+  setTimeout(() => location.reload(), 1200);
+}
+</script>
+</body>
+</html>

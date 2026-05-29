@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WAF Dashboard — Защита от форсированного браузинга</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0b0f1a;
+  --surface: #131929;
+  --surface2: #1a2236;
+  --border: #1e2d47;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --accent: #3b82f6;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --success: #22c55e;
+  --info: #06b6d4;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 60px; position: sticky; top: 0; z-index: 100;
+}
+.logo { display: flex; align-items: center; gap: .6rem; font-size: 1.1rem; font-weight: 700; color: var(--text); }
+.logo span { font-size: 1.4rem; }
+.logo small { color: var(--muted); font-weight: 400; font-size: .75rem; margin-left: .25rem; }
+.header-right { display: flex; align-items: center; gap: 1rem; }
+.mode-badge {
+  padding: .25rem .75rem; border-radius: 999px; font-size: .75rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.mode-block { background: rgba(239,68,68,.15); color: var(--danger); border: 1px solid rgba(239,68,68,.3); }
+.mode-monitoring { background: rgba(245,158,11,.15); color: var(--warning); border: 1px solid rgba(245,158,11,.3); }
+.mode-disabled { background: rgba(100,116,139,.15); color: var(--muted); border: 1px solid rgba(100,116,139,.3); }
+.live-dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%;
+  box-shadow: 0 0 6px var(--success); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+.nav { display: flex; gap: .25rem; }
+.nav a { color: var(--muted); text-decoration: none; padding: .4rem .75rem; border-radius: 6px;
+  font-size: .8rem; transition: all .15s; }
+.nav a:hover, .nav a.active { background: var(--surface2); color: var(--text); }
+
+main { padding: 1.5rem 2rem; max-width: 1600px; margin: 0 auto; }
+
+.section-title { font-size: .7rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .1em; color: var(--muted); margin-bottom: 1rem; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 1.25rem 1.5rem; position: relative; overflow: hidden; transition: border-color .2s;
+}
+.stat-card:hover { border-color: var(--accent); }
+.stat-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--card-color, var(--accent));
+}
+.stat-label { color: var(--muted); font-size: .75rem; margin-bottom: .4rem; text-transform: uppercase; letter-spacing: .05em; }
+.stat-value { font-size: 2rem; font-weight: 700; line-height: 1; color: var(--card-color, var(--text)); }
+.stat-sub { color: var(--muted); font-size: .75rem; margin-top: .35rem; }
+.stat-icon { position: absolute; top: 1rem; right: 1.25rem; font-size: 1.5rem; opacity: .3; }
+
+.charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+.chart-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;
+}
+.chart-card h3 { font-size: .85rem; font-weight: 600; color: var(--text); margin-bottom: 1rem; }
+.chart-wrap { position: relative; height: 200px; }
+
+.panels-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+.panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.panel-header {
+  padding: .875rem 1.25rem; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.panel-header h3 { font-size: .85rem; font-weight: 600; }
+.panel-body { padding: 0; flex: 1; overflow-y: auto; max-height: 320px; }
+
+table { width: 100%; border-collapse: collapse; }
+th { padding: .6rem 1rem; text-align: left; font-size: .7rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border);
+  background: var(--surface2); position: sticky; top: 0; }
+td { padding: .6rem 1rem; border-bottom: 1px solid rgba(30,45,71,.5); font-size: .8rem; vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(59,130,246,.04); }
+
+.badge {
+  display: inline-flex; align-items: center; gap: .3rem; padding: .15rem .5rem;
+  border-radius: 4px; font-size: .7rem; font-weight: 600;
+}
+.badge-danger { background: rgba(239,68,68,.15); color: var(--danger); }
+.badge-warning { background: rgba(245,158,11,.15); color: var(--warning); }
+.badge-success { background: rgba(34,197,94,.15); color: var(--success); }
+.badge-info { background: rgba(6,182,212,.15); color: var(--info); }
+.badge-muted { background: rgba(100,116,139,.15); color: var(--muted); }
+
+.ip-cell { font-family: monospace; font-size: .8rem; color: var(--accent); }
+.url-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--muted); font-family: monospace; font-size: .75rem; }
+
+.bottom-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+
+.config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-bottom: .5rem; }
+.config-item { display: flex; justify-content: space-between; align-items: center;
+  padding: .5rem .75rem; background: var(--surface2); border-radius: 6px; }
+.config-key { color: var(--muted); font-size: .75rem; }
+.config-val { font-weight: 600; font-size: .8rem; font-family: monospace; }
+
+.tracker-row td:last-child { text-align: right; }
+.bar-container { height: 6px; background: var(--surface2); border-radius: 3px; margin-top: 3px; width: 100%; }
+.bar-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+
+.actions-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+.actions-panel h3 { font-size: .85rem; font-weight: 600; margin-bottom: 1rem; }
+.form-row { display: flex; gap: .5rem; margin-bottom: .75rem; align-items: flex-end; }
+.form-group { flex: 1; }
+.form-group label { display: block; font-size: .7rem; color: var(--muted); margin-bottom: .3rem; text-transform: uppercase; }
+input, select {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: .5rem .75rem; font-size: .8rem; width: 100%;
+  outline: none; transition: border-color .15s;
+}
+input:focus, select:focus { border-color: var(--accent); }
+.btn {
+  padding: .5rem 1.25rem; border-radius: 6px; border: none; cursor: pointer;
+  font-size: .8rem; font-weight: 600; transition: all .15s; white-space: nowrap;
+}
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: #dc2626; }
+.btn-success { background: var(--success); color: #fff; }
+.btn-success:hover { background: #16a34a; }
+.btn-warning { background: var(--warning); color: #000; }
+.btn-warning:hover { background: #d97706; }
+.btn-info { background: var(--info); color: #000; }
+.btn-info:hover { background: #0891b2; }
+.btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-ghost:hover { border-color: var(--accent); }
+
+.alert { padding: .75rem 1rem; border-radius: 8px; font-size: .8rem; margin-top: .75rem; }
+.alert-success { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.3); color: var(--success); }
+.alert-error { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); color: var(--danger); }
+
+.refresh-indicator { color: var(--muted); font-size: .75rem; display: flex; align-items: center; gap: .4rem; }
+.countdown { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
+
+@media (max-width: 1100px) {
+  .charts-grid { grid-template-columns: 1fr; }
+  .panels-grid { grid-template-columns: 1fr; }
+  .bottom-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 700px) {
+  main { padding: 1rem; }
+  header { padding: 0 1rem; }
+  .bottom-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span>🛡️</span>
+    WAF Dashboard
+    <small>Защита от форсированного браузинга</small>
+  </div>
+  <nav class="nav">
+    <a href="/waf/" class="active">Обзор</a>
+    <a href="/waf/events/">События</a>
+    <a href="/waf/blocked-ips/">Блокировки</a>
+    <a href="/admin/">Администрирование</a>
+  </nav>
+  <div class="header-right">
+    <div class="refresh-indicator">
+      Обновление через <span class="countdown" id="countdown">10</span>с
+    </div>
+    <div class="live-dot" title="Live"></div>
+    <span class="mode-badge mode-{{ mode }}">Режим: {{ mode }}</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- KPI cards -->
+  <div class="section-title">Сводная статистика</div>
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card" style="--card-color: var(--accent)">
+      <div class="stat-icon">📥</div>
+      <div class="stat-label">Всего запросов</div>
+      <div class="stat-value" id="s-total">{{ total_requests }}</div>
+      <div class="stat-sub">{{ requests_last_hour }} за последний час</div>
+    </div>
+    <div class="stat-card" style="--card-color: var(--danger)">
+      <div class="stat-icon">🚫</div>
+      <div class="stat-label">Заблокировано</div>
+      <div class="stat-value" id="s-blocked">{{ blocked_requests }}</div>
+      <div class="stat-sub">{{ blocked_last_hour }} за последний час</div>
+    </div>
+    <div class="stat-card" style="--card-color: var(--warning)">
+      <div class="stat-icon">🔒</div>
+      <div class="stat-label">Активных блокировок</div>
+      <div class="stat-value" id="s-active-blocks">{{ active_blocks }}</div>
+      <div class="stat-sub">заблокированных IP</div>
+    </div>
+    <div class="stat-card" style="--card-color: var(--success)">
+      <div class="stat-icon">✅</div>
+      <div class="stat-label">Процент блокировок</div>
+      <div class="stat-value" id="s-block-rate">{{ block_rate }}%</div>
+      <div class="stat-sub">доля блокировок от трафика</div>
+    </div>
+    <div class="stat-card" style="--card-color: var(--info)">
+      <div class="stat-icon">⚡</div>
+      <div class="stat-label">Атак за час</div>
+      <div class="stat-value" id="s-attacks">{{ attacks_last_hour }}</div>
+      <div class="stat-sub">{{ events_today }} событий сегодня</div>
+    </div>
+    <div class="stat-card" style="--card-color: #a855f7">
+      <div class="stat-icon">📊</div>
+      <div class="stat-label">Порог уникальных URL</div>
+      <div class="stat-value">{{ thresholds.unique_urls }}</div>
+      <div class="stat-sub">за {{ config.window_seconds }}с / окно</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>📈 Трафик по часам (последние 24 ч)</h3>
+      <div class="chart-wrap">
+        <canvas id="trafficChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>🥧 Причины блокировок</h3>
+      <div class="chart-wrap">
+        <canvas id="reasonChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Events + Top IPs -->
+  <div class="panels-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <h3>🔔 Последние события безопасности</h3>
+        <a href="/waf/events/" style="color:var(--accent);text-decoration:none;font-size:.75rem">Все →</a>
+      </div>
+      <div class="panel-body">
+        <table>
+          <thead>
+            <tr>
+              <th>Время</th>
+              <th>Тип</th>
+              <th>IP</th>
+              <th>URL</th>
+              <th>Унік. URL</th>
+            </tr>
+          </thead>
+          <tbody id="eventsTable">
+            {% for e in recent_events %}
+            <tr>
+              <td style="white-space:nowrap;color:var(--muted);font-size:.7rem">{{ e.timestamp|date:"d.m H:i:s" }}</td>
+              <td>
+                {% if e.event_type == 'attack_detected' or e.event_type == 'blocked_request' %}
+                  <span class="badge badge-danger">{{ e.get_event_type_display }}</span>
+                {% elif e.event_type == 'ip_blocked' %}
+                  <span class="badge badge-warning">{{ e.get_event_type_display }}</span>
+                {% elif e.event_type == 'ip_unblocked' %}
+                  <span class="badge badge-success">{{ e.get_event_type_display }}</span>
+                {% elif e.event_type == 'threshold_warning' %}
+                  <span class="badge badge-warning">{{ e.get_event_type_display }}</span>
+                {% else %}
+                  <span class="badge badge-muted">{{ e.get_event_type_display }}</span>
+                {% endif %}
+              </td>
+              <td class="ip-cell">{{ e.source_ip }}</td>
+              <td class="url-cell" title="{{ e.url }}">{{ e.url|truncatechars:40 }}</td>
+              <td style="text-align:right;font-weight:600;color:{% if e.unique_urls_at_time >= thresholds.unique_urls %}var(--danger){% elif e.unique_urls_at_time >= thresholds.unique_urls|add:"-15" %}var(--warning){% else %}var(--text){% endif %}">
+                {{ e.unique_urls_at_time }}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:2rem">Событий нет</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h3>🏆 Топ IP по активности (24 ч)</h3>
+      </div>
+      <div class="panel-body">
+        <table>
+          <thead>
+            <tr>
+              <th>IP</th>
+              <th>Запросов</th>
+              <th>Заблок.</th>
+              <th>Статус</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in top_ips %}
+            <tr>
+              <td class="ip-cell">{{ row.source_ip }}</td>
+              <td>{{ row.total }}</td>
+              <td style="color:{% if row.blocked > 0 %}var(--danger){% else %}var(--muted){% endif %}">{{ row.blocked }}</td>
+              <td>
+                {% for b in active_block_list %}{% if b.ip_address == row.source_ip %}
+                  <span class="badge badge-danger">🔒 Заблок.</span>
+                {% endif %}{% endfor %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:2rem">Нет данных</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live trackers + Active blocks + Config -->
+  <div class="bottom-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <h3>📡 Live-мониторинг IP (текущее окно)</h3>
+      </div>
+      <div class="panel-body">
+        <table>
+          <thead>
+            <tr><th>IP</th><th>Унік. URL</th><th>Запросов</th><th>404%</th></tr>
+          </thead>
+          <tbody id="trackersTable">
+            {% for t in live_trackers %}
+            <tr class="tracker-row">
+              <td class="ip-cell">{{ t.ip }}</td>
+              <td>
+                <div>{{ t.unique_urls }} / {{ thresholds.unique_urls }}</div>
+                <div class="bar-container">
+                  <div class="bar-fill" style="width:{% widthratio t.unique_urls thresholds.unique_urls 100 %}%;background:{% if t.unique_urls >= thresholds.unique_urls %}var(--danger){% elif t.unique_urls >= thresholds.unique_urls|add:"-15" %}var(--warning){% else %}var(--success){% endif %}"></div>
+                </div>
+              </td>
+              <td>{{ t.total_requests }}</td>
+              <td style="color:{% if t.error_rate >= 70 %}var(--danger){% elif t.error_rate >= 40 %}var(--warning){% else %}var(--muted){% endif %}">{{ t.error_rate }}%</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1.5rem">Активных источников нет</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h3>🔒 Активные блокировки</h3>
+        <a href="/waf/blocked-ips/" style="color:var(--accent);text-decoration:none;font-size:.75rem">Все →</a>
+      </div>
+      <div class="panel-body">
+        <table>
+          <thead>
+            <tr><th>IP</th><th>Причина</th><th>Истекает</th><th></th></tr>
+          </thead>
+          <tbody id="blocksTable">
+            {% for b in active_block_list %}
+            <tr>
+              <td class="ip-cell">{{ b.ip_address }}</td>
+              <td>
+                {% if b.reason == 'unique_url_limit' %}<span class="badge badge-danger">URL лимит</span>
+                {% elif b.reason == 'error_rate_limit' %}<span class="badge badge-warning">404 лимит</span>
+                {% elif b.reason == 'rps_limit' %}<span class="badge badge-info">RPS лимит</span>
+                {% else %}<span class="badge badge-muted">{{ b.reason }}</span>
+                {% endif %}
+              </td>
+              <td style="color:var(--muted);font-size:.75rem">
+                {% if b.expires_at %}{{ b.expires_at|date:"d.m H:i" }}{% else %}∞{% endif %}
+              </td>
+              <td>
+                <button class="btn btn-ghost" style="padding:.2rem .5rem;font-size:.7rem"
+                  onclick="unblockIP('{{ b.ip_address }}')">✕</button>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1.5rem">Нет активных блокировок</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="actions-panel">
+      <h3>⚙️ Управление</h3>
+
+      <div style="margin-bottom:1rem">
+        <div class="config-grid">
+          <div class="config-item">
+            <span class="config-key">Режим</span>
+            <span class="config-val" style="color:var(--{% if mode == 'block' %}danger{% elif mode == 'monitoring' %}warning{% else %}muted{% endif %})">{{ mode }}</span>
+          </div>
+          <div class="config-item">
+            <span class="config-key">Backend</span>
+            <span class="config-val" style="color:var(--muted);font-size:.7rem">{{ backend_url|truncatechars:20 }}</span>
+          </div>
+          <div class="config-item">
+            <span class="config-key">Окно</span>
+            <span class="config-val">{{ config.window_seconds }}с</span>
+          </div>
+          <div class="config-item">
+            <span class="config-key">Лимит URL</span>
+            <span class="config-val">{{ thresholds.unique_urls }}</span>
+          </div>
+          <div class="config-item">
+            <span class="config-key">404-rate</span>
+            <span class="config-val">{{ thresholds.error_rate_percent }}%</span>
+          </div>
+          <div class="config-item">
+            <span class="config-key">RPS</span>
+            <span class="config-val">{{ thresholds.rps }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>IP для блокировки</label>
+          <input type="text" id="blockIpInput" placeholder="192.168.1.100">
+        </div>
+        <div class="form-group" style="max-width:120px">
+          <label>Длительность</label>
+          <select id="blockDuration">
+            <option value="3600">1 час</option>
+            <option value="86400">1 день</option>
+            <option value="0">Навсегда</option>
+          </select>
+        </div>
+        <button class="btn btn-danger" onclick="blockIP()">Заблокировать</button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>IP для разблокировки</label>
+          <input type="text" id="unblockIpInput" placeholder="192.168.1.100">
+        </div>
+        <button class="btn btn-success" onclick="unblockIPManual()">Разблокировать</button>
+      </div>
+
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-warning" onclick="simulateAttack()">⚡ Симулировать атаку</button>
+        <button class="btn btn-ghost" onclick="clearLogs()">🗑️ Очистить логи</button>
+      </div>
+
+      <div id="actionResult"></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const hourlyLabels = {{ hourly_labels|safe }};
+const hourlyTotals = {{ hourly_totals|safe }};
+const hourlyBlocked = {{ hourly_blocked|safe }};
+const reasonLabels = {{ reason_labels|safe }};
+const reasonCounts = {{ reason_counts|safe }};
+
+const gridDefaults = {
+  color: 'rgba(30,45,71,.8)',
+};
+
+// Traffic chart
+const trafficCtx = document.getElementById('trafficChart').getContext('2d');
+new Chart(trafficCtx, {
+  type: 'bar',
+  data: {
+    labels: hourlyLabels,
+    datasets: [
+      {
+        label: 'Всего запросов',
+        data: hourlyTotals,
+        backgroundColor: 'rgba(59,130,246,.4)',
+        borderColor: 'rgba(59,130,246,.8)',
+        borderWidth: 1,
+        borderRadius: 3,
+      },
+      {
+        label: 'Заблокировано',
+        data: hourlyBlocked,
+        backgroundColor: 'rgba(239,68,68,.6)',
+        borderColor: 'rgba(239,68,68,.9)',
+        borderWidth: 1,
+        borderRadius: 3,
+      }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } } } },
+    scales: {
+      x: { grid: gridDefaults, ticks: { color: '#64748b', font: { size: 10 }, maxRotation: 0,
+          callback: (v, i) => i % 4 === 0 ? hourlyLabels[i] : '' } },
+      y: { grid: gridDefaults, ticks: { color: '#64748b', font: { size: 10 } }, beginAtZero: true }
+    }
+  }
+});
+
+// Reason chart
+const reasonCtx = document.getElementById('reasonChart').getContext('2d');
+const reasonChart = new Chart(reasonCtx, {
+  type: 'doughnut',
+  data: {
+    labels: reasonLabels.length ? reasonLabels : ['Нет данных'],
+    datasets: [{
+      data: reasonCounts.length ? reasonCounts : [1],
+      backgroundColor: ['rgba(239,68,68,.7)', 'rgba(245,158,11,.7)', 'rgba(6,182,212,.7)', 'rgba(168,85,247,.7)'],
+      borderColor: ['#ef4444','#f59e0b','#06b6d4','#a855f7'],
+      borderWidth: 1,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 }, padding: 12, boxWidth: 12 } }
+    }
+  }
+});
+
+// Auto refresh countdown
+let countdown = 10;
+function tick() {
+  countdown--;
+  document.getElementById('countdown').textContent = countdown;
+  if (countdown <= 0) {
+    countdown = 10;
+    refreshStats();
+  }
+}
+setInterval(tick, 1000);
+
+async function refreshStats() {
+  try {
+    const r = await fetch('/waf/api/stats/');
+    const d = await r.json();
+    document.getElementById('s-total').textContent = d.total_requests;
+    document.getElementById('s-blocked').textContent = d.blocked_requests;
+    document.getElementById('s-active-blocks').textContent = d.active_blocks;
+    document.getElementById('s-block-rate').textContent = d.block_rate + '%';
+    document.getElementById('s-attacks').textContent = d.attacks_last_hour;
+
+    const tb = document.getElementById('trackersTable');
+    if (d.live_trackers && d.live_trackers.length > 0) {
+      tb.innerHTML = d.live_trackers.map(t => {
+        const limit = {{ thresholds.unique_urls }};
+        const pct = Math.min(Math.round(t.unique_urls / limit * 100), 100);
+        const barColor = t.unique_urls >= limit ? 'var(--danger)' : t.unique_urls >= limit * .7 ? 'var(--warning)' : 'var(--success)';
+        const rateColor = t.error_rate >= 70 ? 'var(--danger)' : t.error_rate >= 40 ? 'var(--warning)' : 'var(--muted)';
+        return `<tr>
+          <td class="ip-cell">${t.ip}</td>
+          <td><div>${t.unique_urls} / ${limit}</div>
+            <div class="bar-container"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div></td>
+          <td>${t.total_requests}</td>
+          <td style="color:${rateColor}">${t.error_rate}%</td>
+        </tr>`;
+      }).join('');
+    } else {
+      tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1.5rem">Активных источников нет</td></tr>';
+    }
+  } catch(e) { console.error('Stats refresh error:', e); }
+}
+
+async function blockIP() {
+  const ip = document.getElementById('blockIpInput').value.trim();
+  const duration = parseInt(document.getElementById('blockDuration').value);
+  if (!ip) { showResult('error', 'Введите IP-адрес'); return; }
+  const r = await fetch('/waf/api/block-ip/', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ ip, duration, reason: 'manual' })
+  });
+  const d = await r.json();
+  showResult(d.success ? 'success' : 'error', d.message || d.error);
+  if (d.success) { document.getElementById('blockIpInput').value = ''; setTimeout(() => location.reload(), 1200); }
+}
+
+async function unblockIP(ip) {
+  const r = await fetch('/waf/api/unblock-ip/', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ ip })
+  });
+  const d = await r.json();
+  if (d.success) { showResult('success', d.message); setTimeout(() => location.reload(), 1000); }
+}
+
+async function unblockIPManual() {
+  const ip = document.getElementById('unblockIpInput').value.trim();
+  if (!ip) { showResult('error', 'Введите IP-адрес'); return; }
+  await unblockIP(ip);
+  document.getElementById('unblockIpInput').value = '';
+}
+
+async function simulateAttack() {
+  showResult('success', '⚡ Симуляция запущена...');
+  const r = await fetch('/waf/api/simulate/', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ count: 70 })
+  });
+  const d = await r.json();
+  if (d.success) {
+    showResult('success',
+      `Симуляция завершена: IP ${d.ip}, отправлено ${d.requests_sent} запросов, заблокирован: ${d.blocked ? 'ДА 🔒' : 'НЕТ'}`);
+    setTimeout(() => location.reload(), 1500);
+  } else {
+    showResult('error', d.error);
+  }
+}
+
+async function clearLogs() {
+  if (!confirm('Очистить все логи, события и блокировки?')) return;
+  const r = await fetch('/waf/api/clear-logs/', { method: 'POST' });
+  const d = await r.json();
+  showResult(d.success ? 'success' : 'error', d.message || d.error);
+  if (d.success) setTimeout(() => location.reload(), 1200);
+}
+
+function showResult(type, msg) {
+  const el = document.getElementById('actionResult');
+  el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+  setTimeout(() => { if (el.innerHTML.includes(msg)) el.innerHTML = ''; }, 4000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>События безопасности — WAF</title>
+<style>
+:root { --bg:#0b0f1a;--surface:#131929;--surface2:#1a2236;--border:#1e2d47;--text:#e2e8f0;--muted:#64748b;--accent:#3b82f6;--danger:#ef4444;--warning:#f59e0b;--success:#22c55e;--info:#06b6d4; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:100}
+.logo{font-size:1.1rem;font-weight:700}
+.nav a{color:var(--muted);text-decoration:none;padding:.4rem .75rem;border-radius:6px;font-size:.8rem}
+.nav a:hover,.nav a.active{background:var(--surface2);color:var(--text)}
+main{padding:1.5rem 2rem;max-width:1600px;margin:0 auto}
+h1{font-size:1.25rem;margin-bottom:1.5rem}
+table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:12px;overflow:hidden;border:1px solid var(--border)}
+th{padding:.7rem 1rem;text-align:left;font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);background:var(--surface2)}
+td{padding:.65rem 1rem;border-bottom:1px solid rgba(30,45,71,.5);font-size:.8rem}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(59,130,246,.04)}
+.badge{display:inline-flex;align-items:center;padding:.15rem .5rem;border-radius:4px;font-size:.7rem;font-weight:600}
+.badge-danger{background:rgba(239,68,68,.15);color:var(--danger)}
+.badge-warning{background:rgba(245,158,11,.15);color:var(--warning)}
+.badge-success{background:rgba(34,197,94,.15);color:var(--success)}
+.badge-info{background:rgba(6,182,212,.15);color:var(--info)}
+.badge-muted{background:rgba(100,116,139,.15);color:var(--muted)}
+.ip{font-family:monospace;color:var(--accent)}
+.url{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace;font-size:.75rem;color:var(--muted)}
+a.back{color:var(--accent);text-decoration:none;font-size:.85rem}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🛡️ WAF Dashboard</div>
+  <nav class="nav" style="display:flex;gap:.25rem">
+    <a href="/waf/">Обзор</a>
+    <a href="/waf/events/" class="active">События</a>
+    <a href="/waf/blocked-ips/">Блокировки</a>
+    <a href="/admin/">Администрирование</a>
+  </nav>
+</header>
+<main>
+  <h1>🔔 События безопасности</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Время</th><th>Тип события</th><th>IP источника</th><th>Метод</th>
+        <th>URL</th><th>Статус</th><th>Уник.URL</th><th>Запросов</th><th>404%</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr>
+        <td style="white-space:nowrap;color:var(--muted);font-size:.75rem">{{ e.timestamp|date:"d.m.Y H:i:s" }}</td>
+        <td>
+          {% if e.event_type == 'attack_detected' or e.event_type == 'blocked_request' %}
+            <span class="badge badge-danger">{{ e.get_event_type_display }}</span>
+          {% elif e.event_type == 'ip_blocked' %}
+            <span class="badge badge-warning">{{ e.get_event_type_display }}</span>
+          {% elif e.event_type == 'ip_unblocked' %}
+            <span class="badge badge-success">{{ e.get_event_type_display }}</span>
+          {% elif e.event_type == 'threshold_warning' %}
+            <span class="badge badge-warning">{{ e.get_event_type_display }}</span>
+          {% else %}
+            <span class="badge badge-muted">{{ e.get_event_type_display }}</span>
+          {% endif %}
+        </td>
+        <td class="ip">{{ e.source_ip }}</td>
+        <td><span class="badge badge-info">{{ e.method }}</span></td>
+        <td class="url" title="{{ e.url }}">{{ e.url }}</td>
+        <td>{% if e.status_code %}<span style="color:{% if e.status_code >= 400 %}var(--danger){% elif e.status_code >= 300 %}var(--warning){% else %}var(--success){% endif %}">{{ e.status_code }}</span>{% else %}—{% endif %}</td>
+        <td style="font-weight:600;color:{% if e.unique_urls_at_time >= 50 %}var(--danger){% elif e.unique_urls_at_time >= 35 %}var(--warning){% else %}var(--text){% endif %}">{{ e.unique_urls_at_time }}</td>
+        <td>{{ e.requests_in_window }}</td>
+        <td style="color:{% if e.error_rate >= 70 %}var(--danger){% elif e.error_rate >= 40 %}var(--warning){% else %}var(--muted){% endif %}">{{ e.error_rate }}%</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:3rem">Событий не найдено</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+</body>
+</html>
