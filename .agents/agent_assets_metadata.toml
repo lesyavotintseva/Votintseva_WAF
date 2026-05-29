@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "htg0AFK6hRp5rnOp0578V"
+uri = "file://ЕСПД_WAF_Контейнер.docx"
+type = "word_document"
+title = "ЕСПД — WAF-контейнер (полный пакет)"
